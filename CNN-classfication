@@ -1,0 +1,156 @@
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import shutil
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.keras.models import Sequential
+from tensorflow.keras import optimizers
+from tensorflow.keras.models import load_model
+
+
+from google.colab import drive
+drive.mount('/content/drive')
+%cd /content/drive/My Drive 
+!ls    # 查看当前程序的根目录
+
+
+base_dir='./机器学习练习数据/cats_and_dogs' #在当前目录/机器学习练习数据下建立了一个cats_and_dogs文件
+train_dir=base_dir+'/train' #在base_dir基础上增加了一个train
+train_dog_dir=train_dir+'/dog' #在train里面建立了dog目录
+train_cat_dir=train_dir+'/cat'
+test_dir=base_dir+'/test'
+test_dog_dir=test_dir+'/dog'
+test_cat_dir=test_dir+'/cat'
+dc_dir1='./机器学习练习数据/cats_and_dogs_small/train/cat'
+dc_dir2='./机器学习练习数据/cats_and_dogs_small/test/cat'
+dc_dir3='./机器学习练习数据/cats_and_dogs_small/train/dog'
+dc_dir4='./机器学习练习数据/cats_and_dogs_small/test/dog'
+
+
+if not os.path.exists(base_dir):
+  os.mkdir(base_dir) #上面那些目录都需要mkdir来新建
+
+  os.mkdir(train_dir)
+  os.mkdir(train_dog_dir)
+  os.mkdir(train_cat_dir)
+  os.mkdir(test_dir)
+  os.mkdir(test_dog_dir)
+  os.mkdir(test_cat_dir)
+
+  fnames = ['cat.{}.jpg'.format(i) for i in range(1000)]
+  for fname in fnames:
+    src=os.path.join(dc_dir1,fname) # 源地址
+    dst=os.path.join(train_cat_dir,fname)
+    shutil.copyfile(src,dst) # copyfile:将src复制到dst
+
+  fnames=['cat.{}.jpg'.format(i) for i in range(1000,1500)]
+  for fname in fnames:
+    src=os.path.join(dc_dir2,fname)
+    dst=os.path.join(test_cat_dir,fname)
+    shutil.copyfile(src,dst)
+
+  fnames=['dog.{}.jpg'.format(i) for i in range(1000)]
+  for fname in fnames:
+    src=os.path.join(dc_dir3,fname)
+    dst=os.path.join(train_dog_dir,fname)
+    shutil.copyfile(src,dst)
+
+  fnames=['dog.{}.jpg'.format(i) for i in range(1000,1500)]
+  for fname in fnames:
+    src=os.path.join(dc_dir4,fname)
+    dst=os.path.join(test_dog_dir,fname)
+    shutil.copyfile(src,dst)
+    
+   # check if datasets have error 
+import PIL
+from pathlib import Path
+from PIL import UnidentifiedImageError
+
+path = Path('./机器学习练习数据/cats_and_dogs/test').rglob("*.jpg")
+for img_p in path:
+    try:
+        img = PIL.Image.open(img_p)
+    except PIL.UnidentifiedImageError:
+            print(img_p)
+            
+            
+from keras_preprocessing.image import ImageDataGenerator
+train_datagen=ImageDataGenerator(rescale=1./255,
+                 rotation_range=40,
+                  width_shift_range=0.2,
+                   height_shift_range=0.2,
+                     shear_range=0.2, 
+                     zoom_range=0.2,
+                     horizontal_flip=True,
+                      vertical_flip=True)
+test_datagen=ImageDataGenerator(rescale=1./255) # 测试数据不能进行图像增强
+
+
+train_generator=train_datagen.flow_from_directory(  #flow_from_directory从哪个目录建立生成器
+    train_dir,
+    target_size=(200,200),# 把图片统一整理成这个大小
+    batch_size=20,
+    class_mode='binary' # 分类形式：二分类
+)
+test_generator=train_datagen.flow_from_directory(
+    test_dir,
+    target_size=(200,200),
+    batch_size=20,
+    class_mode='binary'
+)
+# 这两个生成器生成的图片可以被keras直接读取
+
+
+model=keras.Sequential()
+model.add(layers.Conv2D(64,(3,3),activation='relu',input_shape=(200,200,3)))
+model.add(layers.Conv2D(64,(3,3),activation='relu'))
+model.add(layers.MaxPooling2D())
+model.add(layers.Dropout(0.25))#训练的图片只有1000张，非常容易过拟合，以0.25概率丢弃
+
+model.add(layers.Conv2D(64,(3,3),activation='relu'))
+model.add(layers.Conv2D(64,(3,3),activation='relu'))
+model.add(layers.MaxPooling2D())
+model.add(layers.Dropout(0.25))
+
+model.add(layers.Conv2D(64,(3,3),activation='relu'))
+model.add(layers.Conv2D(64,(3,3),activation='relu'))
+model.add(layers.MaxPooling2D())
+model.add(layers.Dropout(0.25))
+
+model.add(layers.Flatten())
+model.add(layers.Dense(256,activation='relu'))
+model.add(layers.Dropout(0.5))
+
+model.add(layers.Dense(1,activation='sigmoid')) # 因为是个二分类问题，输入一个值（1 or 0)
+
+
+model.compile(loss='binary_crossentropy',optimizer=optimizers.Adam(learning_rate=0.0001),metrics=['acc'])
+
+
+history=model.fit_generator(train_generator,
+              epochs=30,
+              steps_per_epoch=100,
+              validation_data=test_generator,
+              validation_steps=50) #1000/20 
+#一定要设置每一步训练多少（batch_size),否则生成器会一直生成图片，一直训练
+#训练一百步：总训练集数量（2000）/每一步训练多少（batch_size:20)=100（step_per_epochs)
+model.summary()
+
+
+model.save('cats_and_dogs_small_1.h5')
+
+
+plt.plot(history.epoch,history.history.get('loss'),label='loss')
+plt.plot(history.epoch,history.history.get('val_loss'),label='val_loss')
+plt.legend()
+
+plt.plot(history.epoch,history.history.get('acc'),label='acc')
+plt.plot(history.epoch,history.history.get('val_acc'),label='val_acc')
+plt.legend()
+
+
+my_model=load_model('cats_and_dogs_small_1.h5')
+my_model.summary()
+
